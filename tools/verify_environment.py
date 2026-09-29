@@ -101,7 +101,7 @@ def main():
                       gradient_norms=gradient_norms, losses=losses,
                       extension_paths=extension_paths)
         torch.cuda.synchronize()
-    output = ROOT / '.local_setup' / ('taichi-check.json' if args.taichi_only else 'smoke-result.json')
+    output = ROOT / 'temporary-build' / ('taichi-check.json' if args.taichi_only else 'smoke-result.json')
     output.parent.mkdir(exist_ok=True)
     output.write_text(json.dumps(result, indent=2), encoding='utf-8')
     print(json.dumps(result, indent=2))

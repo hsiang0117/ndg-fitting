@@ -14,7 +14,7 @@ output = create_run_directory(ROOT / 'output')
 state = dict(output=str(output), pid=os.getpid(), status='running',
              started_at=datetime.now().isoformat(), iterations=30000)
 status_path = output / 'run_status.json'
-current_path = ROOT / '.local_setup' / 'zenith-current-run.json'
+current_path = ROOT / 'temporary-build' / 'zenith-current-run.json'
 command = [sys.executable, '-u', '-m', 'splatting.splatting_train',
            '--dataset_path', r'D:\dataset\CloudDatasetZenith',
            '--output_dir', str(output), '--iterations', '30000',

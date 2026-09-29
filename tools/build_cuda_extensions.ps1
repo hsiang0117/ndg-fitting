@@ -26,7 +26,7 @@ $env:CUDA_HOME = $CudaPath
 $env:TORCH_CUDA_ARCH_LIST = $CudaArch
 $env:MAX_JOBS = "$Jobs"
 $env:PATH = "$(Split-Path $python -Parent);$CudaPath\bin;$env:PATH"
-New-Item -ItemType Directory -Force (Join-Path $repo '.local_setup') | Out-Null
+New-Item -ItemType Directory -Force (Join-Path $repo 'temporary-build') | Out-Null
 Push-Location -LiteralPath $repo
 try {
     & $python -I -c 'import sys,torch; from pathlib import Path; assert Path(torch.__file__).resolve().is_relative_to(Path(sys.prefix).resolve()); print(sys.executable,torch.__version__,torch.version.cuda)'
@@ -36,7 +36,7 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'Header patch validation failed.' }
     }
     foreach ($extension in @('simple-knn', 'diff-gaussian-rasterization')) {
-        & $python -I -m pip install --no-build-isolation --no-deps --force-reinstall "ext/$extension" --log ".local_setup/$extension-build.log"
+        & $python -I -m pip install --no-build-isolation --no-deps --force-reinstall "ext/$extension" --log "temporary-build/$extension-build.log"
         if ($LASTEXITCODE -ne 0) { throw "Build failed: $extension" }
     }
     & $python -I -m pip check

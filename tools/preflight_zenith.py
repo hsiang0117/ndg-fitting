@@ -34,7 +34,7 @@ with Image.open(first_path) as source:
 expected = (rgba[..., :3] * (rgba[..., 3:4] / 255)).astype(np.uint8)
 np.testing.assert_array_equal(np.asarray(data.train_cameras[0].image), expected)
 
-fixture = ROOT / '.local_setup' / 'zenith-smoke-data'
+fixture = ROOT / 'temporary-build' / 'zenith-smoke-data'
 fixture.mkdir(parents=True, exist_ok=True)
 for split, source, indices in [('train', train, [0, 18]), ('test', test, [0])]:
     frames = [source['frames'][i] for i in indices]
@@ -59,5 +59,5 @@ report = dict(dataset=str(dataset), train_views=73, test_views=36, initial_point
               maximum_camera_center_error=max(camera_errors), pixels_match_gt=True,
               fixture=str(fixture), xyz_min=data.point_cloud.points.min(axis=0).tolist(),
               xyz_max=data.point_cloud.points.max(axis=0).tolist())
-(ROOT / '.local_setup' / 'zenith-preflight.json').write_text(json.dumps(report, indent=2))
+(ROOT / 'temporary-build' / 'zenith-preflight.json').write_text(json.dumps(report, indent=2))
 print(json.dumps(report, indent=2))
