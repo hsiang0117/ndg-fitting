@@ -23,7 +23,7 @@ from splatting.camera import *
 
 class Scene:
 
-    def __init__(self, dataset_path, shuffle=True, white_background=False, resolution_scales=[1.0]):
+    def __init__(self, dataset_path, shuffle=True, white_background=False, resolution_scales=[1.0], data_device=None):
 
         self.train_cameras = {}
         self.test_cameras = {}
@@ -54,9 +54,9 @@ class Scene:
 
         for resolution_scale in resolution_scales:
             print("Loading Training Cameras")
-            self.train_cameras = cameras_list_from_cam_data(scene_data.train_cameras, resolution_scale)
+            self.train_cameras = cameras_list_from_cam_data(scene_data.train_cameras, resolution_scale, data_device=data_device)
             print("Loading Test Cameras")
-            self.test_cameras = cameras_list_from_cam_data(scene_data.test_cameras, resolution_scale)
+            self.test_cameras = cameras_list_from_cam_data(scene_data.test_cameras, resolution_scale, data_device=data_device)
 
     def total_parameters(self):
         return self.train_cameras[0].params.shape[0]

@@ -1,0 +1,22 @@
+# Python 3.12, offline 6D training; validated on Windows.
+# CUDA toolkit and the two compiled extensions are installed separately.
+--extra-index-url https://download.pytorch.org/whl/cu128
+torch==2.11.0+cu128
+ConfigArgParse==1.5.3
+numpy==1.26.4
+opencv-python==4.8.1.78
+plyfile==1.0.3
+scipy==1.14.0
+taichi==1.7.4
+torch-ema==0.3
+tqdm==4.66.3
+Pillow>=10,<13
+tensorboard>=2.16,<3
+# utils.py imports these even in offline training; no window is created.
+glfw==2.5.7
+PyOpenGL==3.1.7
+# Build tools for the two upstream CUDA extensions.
+setuptools==78.1.0
+wheel>=0.45,<1
+ninja>=1.11,<2
+# imgui and matplotlib are not imported by the offline 6D training path.

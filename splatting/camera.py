@@ -15,7 +15,7 @@ Adapted from https://github.com/graphdeco-inria/gaussian-splatting/utils/camera_
 
 from splatting.splatting_utils import *
 
-def load_cam(id, camera_data, resolution_scale, device='cuda'):
+def load_cam(id, camera_data, resolution_scale, device='cuda', data_device=None):
     orig_w, orig_h = camera_data.image.size
 
     global_down = 1
@@ -37,20 +37,21 @@ def load_cam(id, camera_data, resolution_scale, device='cuda'):
     gt_image = resized_image_rgb[:3, ...]
     loaded_mask = None
 
-    if resized_image_rgb.shape[1] == 4:
+    if resized_image_rgb.shape[0] == 4:
         loaded_mask = resized_image_rgb[3:4, ...]
 
     return Camera(colmap_id=camera_data.uid, R=camera_data.R, T=camera_data.T,
                   fov_x=camera_data.fov_x, fov_y=camera_data.fov_y, c_x=c_x, c_y=c_y,
                   image=gt_image, gt_alpha_mask=loaded_mask,
-                  image_name=camera_data.image_name, params=camera_data.params, uid=id, device=device)
+                  image_name=camera_data.image_name, params=camera_data.params, uid=id, device=device,
+                  data_device=data_device)
 
 
-def cameras_list_from_cam_data(cams, resolution_scale):
+def cameras_list_from_cam_data(cams, resolution_scale, data_device=None):
     camera_list = []
 
     for id, c in enumerate(cams):
-        camera_list.append(load_cam(id, c, resolution_scale))
+        camera_list.append(load_cam(id, c, resolution_scale, data_device=data_device))
 
     return camera_list
 
@@ -58,7 +59,7 @@ def cameras_list_from_cam_data(cams, resolution_scale):
 class Camera:
     def __init__(self, colmap_id, R, T, fov_x, fov_y, c_x, c_y, image, gt_alpha_mask,
                  image_name, uid, params=None,
-                 trans=np.array([0.0, 0.0, 0.0]), scale=1.0, device="cuda"
+                 trans=np.array([0.0, 0.0, 0.0]), scale=1.0, device="cuda", data_device=None
                  ):
         super(Camera, self).__init__()
 
@@ -74,14 +75,12 @@ class Camera:
         self.params = params
         self.device = device
 
-        self.original_image = image.clamp(0.0, 1.0).to(self.device)
+        self.original_image = image.clamp(0.0, 1.0).to(data_device or self.device)
         self.image_width = self.original_image.shape[2]
         self.image_height = self.original_image.shape[1]
 
         if gt_alpha_mask is not None:
-            self.original_image *= gt_alpha_mask.to(self.device)
-        else:
-            self.original_image *= torch.ones((1, self.image_height, self.image_width), device=self.device)
+            self.original_image *= gt_alpha_mask.to(self.original_image.device)
 
         self.zfar = 100.0
         self.znear = 0.01

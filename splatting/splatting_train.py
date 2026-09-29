@@ -3,6 +3,7 @@
 
 import copy
 import time
+from pathlib import Path
 
 import configargparse
 import tqdm
@@ -13,7 +14,8 @@ from simple_knn._C import distCUDA2
 from generators.gaussian_generator import GaussianGenerator
 from losses import *
 from splatting.scene import Scene
-from render import render
+from splatting.render import render
+from splatting.training_output import create_run_directory, save_training_image, save_image, write_json
 from utils import *
 
 
@@ -38,7 +40,14 @@ def run():
 
     # Directories
     conf.add('--dataset_path', required=True, help='Path to the dataset to be trained on')
-    conf.add('--models_path', default='./models/splatting', help='Path to save the models')
+    conf.add('--models_path', default='./output', help='Root for timestamped run directories')
+    conf.add('--output_dir', default=None, help='Use this exact run directory instead of creating a timestamp')
+    conf.add('--iterations', type=int, default=30000)
+    conf.add('--save_interval', type=int, default=1000)
+    conf.add('--eval_interval', type=int, default=1000)
+    conf.add('--image_interval', type=int, default=1000)
+    conf.add('--resolution_scale', type=float, default=1.0)
+    conf.add('--data_device', default='cpu', help='Storage device for GT images')
 
     # Misc
     conf.add('--white_background', action='store_true', help='Whether to use white background')
@@ -47,6 +56,14 @@ def run():
     conf.add('--tensorboard', action='store_true', help='Whether to use tensorboard for visualization')
 
     conf = conf.parse_args()
+    if min(conf.iterations, conf.save_interval, conf.eval_interval, conf.image_interval) < 1:
+        raise ValueError('Iterations and intervals must be positive')
+    models_path = Path(conf.output_dir) if conf.output_dir else create_run_directory(conf.models_path)
+    models_path.mkdir(parents=True, exist_ok=True)
+    if (models_path / 'config.json').exists():
+        raise FileExistsError(f'Refusing to overwrite an existing run: {models_path}')
+    write_json(models_path / 'config.json', vars(conf))
+    print(f'Output: {models_path.resolve()}', flush=True)
 
     # Set random seeds
     np.random.seed(conf.seed)
@@ -55,7 +72,7 @@ def run():
     torch.cuda.manual_seed(conf.seed)
 
     if conf.tensorboard:
-        summary_writer = SummaryWriter('./runs/splatting/'+time.strftime('%Y%m%d-%H%M%S'))
+        summary_writer = SummaryWriter(str(models_path / 'tensorboard'))
 
     iter_start = torch.cuda.Event(enable_timing=True)
     iter_end = torch.cuda.Event(enable_timing=True)
@@ -63,7 +80,15 @@ def run():
     criterion_train = DssimL1Loss(permute=False)
     criterion_test = AllMetrics()
 
-    scene = Scene(conf.dataset_path, white_background=conf.white_background)
+    scene = Scene(conf.dataset_path, white_background=conf.white_background,
+                  resolution_scales=[conf.resolution_scale], data_device=conf.data_device)
+    train_names = [c.image_name for c in scene.train_cameras]
+    test_names = [c.image_name for c in scene.test_cameras]
+    if set(train_names) & set(test_names):
+        raise ValueError('Training and test images overlap')
+    write_json(models_path / 'dataset.json', dict(train=train_names, test=test_names,
+               initial_points=len(scene.data.point_cloud.points),
+               resolution=[scene.train_cameras[0].image_width, scene.train_cameras[0].image_height]))
 
     xyz_pcd = torch.from_numpy(np.asarray(scene.data.point_cloud.points)).float().to(conf.device)
     rgb_pcd = torch.from_numpy(np.asarray(scene.data.point_cloud.colors)).float().to(conf.device)
@@ -97,17 +122,11 @@ def run():
     bg_color = [1, 1, 1] if conf.white_background else [0, 0, 0]
     background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
 
-    # Create model directory
-    create_dir(os.path.join(conf.models_path, time.strftime('%Y%m%d-%H%M%S')))
-    models_path = os.path.join(conf.models_path, time.strftime('%Y%m%d-%H%M%S'))
-
-    training_iterations = 1
-
-    test = True
-
     losses_log = [0]
+    started = time.perf_counter()
+    evaluation_history = {}
 
-    for k in tqdm(range(30000), desc='Training model'):
+    for training_iterations in tqdm(range(1, conf.iterations + 1), desc='Training model', mininterval=10):
         iter_start.record()
 
         model.optimizer.zero_grad()
@@ -120,10 +139,12 @@ def run():
         render_result, cull_percent = render(train_camera, model, background)
 
         prediction = render_result.unsqueeze(0)
-        gt = train_camera.original_image.unsqueeze(0)
+        gt = train_camera.original_image.to(conf.device).unsqueeze(0)
 
         # Loss
         loss = criterion_train(prediction, gt)
+        if not torch.isfinite(loss):
+            raise RuntimeError(f'Non-finite loss at step {training_iterations}')
         loss.backward()
 
         model.optimizer.step()
@@ -143,46 +164,66 @@ def run():
         if len(losses_log) > 200:
             losses_log.pop(0)
 
-        training_iterations += 1
+        if training_iterations % conf.image_interval == 0 or training_iterations == conf.iterations:
+            save_training_image(models_path, training_iterations, render_result, train_camera.image_name)
 
-        if training_iterations % 1000 == 0:
-            model_to_save = copy.deepcopy(model)
-            model_to_save.finalize_gs()
+        if training_iterations % 100 == 0 or training_iterations == conf.iterations:
+            write_json(models_path / 'progress.json', dict(iteration=training_iterations,
+                       total_iterations=conf.iterations, loss=loss.item(),
+                       mean_recent_loss=float(np.mean(losses_log)),
+                       gaussians=model.n_gs, child_gaussians=model.n_gs_sb,
+                       elapsed_seconds=time.perf_counter() - started,
+                       cuda_allocated_mb=torch.cuda.memory_allocated() / 2**20,
+                       cuda_peak_mb=torch.cuda.max_memory_allocated() / 2**20))
 
-            save_dict = {
-                'training_iterations': training_iterations,
-                'n_gs': model_to_save.n_gs,
-                'model': model_to_save.state_dict()
-            }
+        if training_iterations % conf.save_interval == 0 or training_iterations == conf.iterations:
+            with torch.no_grad():
+                model_to_save = copy.deepcopy(model)
+                # Apply EMA before merging children, which rebuilds the EMA object.
+                model_to_save.ema.copy_to()
+                model_to_save.finalize_gs()
 
-            torch.save(save_dict, models_path + '/model' + str(training_iterations) + '.pth')
-            model_to_save.save_ply(models_path + '/point_cloud' + str(training_iterations) + '.ply')
+                save_dict = {
+                    'training_iterations': training_iterations,
+                    'n_gs': model_to_save.n_gs,
+                    'model': model_to_save.state_dict()
+                }
 
-        if test and training_iterations % 1000 == 0:
+                torch.save(save_dict, models_path / f'model{training_iterations}.pth')
+                model_to_save.save_ply(str(models_path / f'point_cloud{training_iterations}.ply'))
+                del model_to_save, save_dict
+
+        if test_cameras and (training_iterations % conf.eval_interval == 0 or training_iterations == conf.iterations):
             with (torch.no_grad(), model.ema.average_parameters()):
                 criterion_test.reset()
-
-                test_imgs = []
 
                 for i, test_camera in enumerate(test_cameras):
                     render_result, _ = render(test_camera, model, background)
 
                     prediction = render_result.unsqueeze(0)
-                    gt = test_camera.original_image.unsqueeze(0)
+                    gt = test_camera.original_image.to(conf.device).unsqueeze(0)
 
                     criterion_test(prediction.permute(0, 2, 3, 1), gt.permute(0, 2, 3, 1))
 
-                    test_imgs.append(prediction.cpu())
-                    test_imgs.append(gt.cpu())
+                    if conf.tensorboard and i == 0:
+                        summary_writer.add_images('Test Samples', torch.cat([prediction, gt]).cpu(), global_step=training_iterations)
+                    if training_iterations == conf.iterations:
+                        save_image(models_path / 'test' / 'renders' / f'{test_camera.image_name}.png', prediction[0])
+                        save_image(models_path / 'test' / 'gt' / f'{test_camera.image_name}.png', gt[0])
 
-                test_imgs = torch.cat(test_imgs, dim=0)
+                # Upstream AllMetrics has an unused LPIPS placeholder; do not report it.
+                metrics = {name: float(value / criterion_test.samples)
+                           for name, value in criterion_test.metrics.items() if name != 'lpips'}
+                metrics['ssim'] = 1.0 - metrics.pop('dssim')
+                evaluation_history[str(training_iterations)] = metrics
+                write_json(models_path / 'evaluation.json', evaluation_history)
+                print(f'\nStep {training_iterations}: test PSNR={metrics["psnr"]:.4f}, SSIM={metrics["ssim"]:.6f}', flush=True)
 
                 if conf.tensorboard:
                     summary_writer.add_scalar('Number of Gaussians', model.n_gs + model.n_gs_sb, training_iterations)
 
                     summary_writer.add_scalar('Test Loss', criterion_test.metrics['psnr'] / criterion_test.samples, training_iterations)
 
-                    summary_writer.add_images('Test Samples', test_imgs, global_step=training_iterations)
 
         if training_iterations == 300:
             model.prune_gs(0.1)
@@ -190,6 +231,12 @@ def run():
         elif training_iterations % 300 == 0:
             model.grow_gs_sb(0.1)
             model.seed_gs(0.1)
+
+    if conf.tensorboard:
+        summary_writer.close()
+    write_json(models_path / 'training_complete.json', dict(iterations=conf.iterations,
+               elapsed_seconds=time.perf_counter() - started,
+               final_metrics=evaluation_history.get(str(conf.iterations))))
 
 
 if __name__ == "__main__":

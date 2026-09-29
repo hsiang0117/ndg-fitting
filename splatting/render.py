@@ -14,7 +14,7 @@ Adapted from https://github.com/graphdeco-inria/gaussian-splatting/gaussian_rend
 """
 
 from diff_gaussian_rasterization import GaussianRasterizationSettings, GaussianRasterizer
-from splatting_utils import *
+from splatting.splatting_utils import *
 
 
 def render(camera, model, bg_color, scaling_modifier=1.0, view=0):

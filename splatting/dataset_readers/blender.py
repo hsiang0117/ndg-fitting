@@ -23,6 +23,7 @@ import math
 
 from splatting.dataset_readers.colmap import CameraData
 from splatting.data_structures import PointCloudData, SceneData
+from splatting.splatting_utils import fetch_ply
 
 
 def fov2focal(fov, pixels):
@@ -80,24 +81,27 @@ def readCamerasFromTransforms(path, transformsfile, white_background, extension=
 
         frames = contents["frames"]
         for idx, frame in enumerate(frames):
-            cam_name = frame["file_path"] + extension
+            cam_name = frame["file_path"]
+            if not Path(cam_name).suffix:
+                cam_name += extension
 
-            matrix = np.linalg.inv(np.array(frame["transform_matrix"]))
-            R = -np.transpose(matrix[:3, :3])
-            R[:, 0] = -R[:, 0]
-            T = -matrix[:3, 3]
+            # NeRF camera-to-world uses OpenGL axes; the rasterizer uses COLMAP axes.
+            c2w = np.array(frame["transform_matrix"], dtype=np.float64)
+            c2w[:3, 1:3] *= -1
+            w2c = np.linalg.inv(c2w)
+            R = w2c[:3, :3].T
+            T = w2c[:3, 3]
 
             image_path = os.path.join(path, cam_name)
-            image_name = Path(cam_name).stem
-            image = Image.open(image_path)
+            image_name = Path(cam_name).with_suffix("").as_posix().replace("/", "_")
+            with Image.open(image_path) as source:
+                im_data = np.array(source.convert("RGBA"))
 
-            im_data = np.array(image.convert("RGBA"))
-
-            bg = np.array([1, 1, 1])
+            bg = np.array([1, 1, 1] if white_background else [0, 0, 0])
 
             norm_data = im_data / 255.0
             arr = norm_data[:, :, :3] * norm_data[:, :, 3:4] + bg * (1 - norm_data[:, :, 3:4])
-            image = Image.fromarray(np.array(arr * 255.0, dtype=np.byte), "RGB")
+            image = Image.fromarray(np.clip(arr * 255.0, 0, 255).astype(np.uint8))
 
             fovy = focal2fov(fov2focal(fovx, image.size[0]), image.size[1])
             FovY = fovy
@@ -127,11 +131,8 @@ def readNerfSyntheticInfo(path, white_background, eval, extension=".png"):
         xyz = np.random.random((num_pts, 3)) * 6.0 - 3.0
         shs = np.random.random((num_pts, 3)) / 255.0
         pcd = PointCloudData(points=xyz, normals=np.zeros((num_pts, 3)), colors=np.zeros((num_pts, 3)))
-
-    try:
-        pass
-    except:
-        pcd = None
+    else:
+        pcd = fetch_ply(ply_path)
 
     scene_info = SceneData(point_cloud=pcd, dimensions=6,
                            train_cameras=train_cam_infos,

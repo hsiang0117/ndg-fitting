@@ -3,6 +3,7 @@ datasets/
 __pycache__/
 venv/
 models/
+output/
 predictions/
 runs/
 paths/
@@ -10,3 +11,11 @@ renders*/
 imgui.ini
 .polyscope.ini
 .vs/
+
+# Local Python environment, build logs, and CUDA binaries
+.venv/
+.local_setup/
+build/
+*.egg-info/
+*.pyd
+*.so

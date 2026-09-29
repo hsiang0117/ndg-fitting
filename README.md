@@ -12,6 +12,12 @@ Abstract: In the wake of many new ML-inspired approaches for reconstructing and 
 
 ## Code Notes
 
+For this fork's Python 3.12 offline 6D environment, dependency changes, Windows
+CUDA build steps, and GPU checks, see [TRAINING_SETUP.md](TRAINING_SETUP.md).
+The default `requirements.txt` now includes `requirements-train.txt`.
+The original dependency list is archived in `requirements-upstream.txt`; it is
+not the installation target for this fork.
+
 This codebase was developed and tested on Windows, we would like to support more platforms but for now we haven't tested this on them.
 
 ### Motivation
