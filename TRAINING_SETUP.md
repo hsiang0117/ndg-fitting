@@ -75,7 +75,7 @@ used by the local 6DGS environment, but to this project's own PyTorch headers:
   a parameter-name change only.
 
 The script checks the exact PyTorch version and original/patched SHA256 hashes
-before any write, saves originals in `.local_setup/`, and supports recovery:
+before any write, saves originals in `temporary-build/`, and supports recovery:
 
 ```powershell
 .\.venv\Scripts\python.exe tools/patch_torch_header.py --restore
@@ -103,7 +103,7 @@ Module-qualified imports in the offline training/rendering entry points allow
 The environment check verifies actual Taichi CUDA culling against a PyTorch
 reference, KNN against brute force, N-DG rendering and parameter gradients,
 and 30 optimization steps with the upstream L1+DSSIM loss. It writes results
-under `.local_setup/`. This is an environment smoke test, not a full dataset
+under `temporary-build/`. This is an environment smoke test, not a full dataset
 reproduction or a guarantee about convergence/metrics on Zenith.
 
 ## Validation status
@@ -124,7 +124,7 @@ kernel. The tested parameter gradients and optimization remain valid; the
 warning was not suppressed. This check does not validate gradients through
 the discrete culling decision itself.
 
-Logs and numerical results are in `.local_setup/`. The checks above initially
+Logs and numerical results are in `temporary-build/`. The checks above initially
 covered only the environment. The later Zenith validation is documented below.
 Interactive preview and Mitsuba/10D+ remain untested.
 
@@ -166,7 +166,7 @@ No LPIPS loss is added to training.
 
 A 320-step integration run on a small Zenith fixture passed, including the
 300-step pruning/seeding event, child-Gaussian export, previews, and evaluation.
-The current full run is recorded in `.local_setup/zenith-current-run.json`;
+The current full run is recorded in `temporary-build/zenith-current-run.json`;
 consult that run's status rather than interpreting this document as proof of
 full training completion.
 

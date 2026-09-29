@@ -14,8 +14,14 @@ imgui.ini
 
 # Local Python environment, build logs, and CUDA binaries
 .venv/
-.local_setup/
+temporary-build/
 build/
 *.egg-info/
 *.pyd
 *.so
+
+dependency-cache/
+
+external-dependencies/
+
+environment-backups/
